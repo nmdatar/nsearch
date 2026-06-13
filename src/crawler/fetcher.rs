@@ -33,9 +33,46 @@ pub async fn fetch(client: &reqwest::Client, url: &url::Url) -> anyhow::Result<F
     .unwrap_or_default();
 
     Ok(FetchResult {
-        url: url.to_string(), 
-        title, 
+        url: url.to_string(),
+        title,
         text,
         links
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_fetch_extracts_title_and_links() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server.mock("GET", "/")
+            .with_status(200)
+            .with_header("content-type", "text/html")
+            .with_body(r#"
+                <html>
+                    <head><title>Test Page</title></head>
+                    <body>
+                        <p>Hello world</p>
+                        <a href="/about">About</a>
+                        <a href="/contact">Contact</a>
+                    </body>
+                </html>
+            "#)
+            .create_async()
+            .await;
+
+        let client = reqwest::Client::new();
+        let url = url::Url::parse(&server.url()).unwrap();
+        let result = fetch(&client, &url).await.unwrap();
+
+        assert_eq!(result.title, "Test Page");
+        assert!(result.text.contains("Hello world"));
+        assert_eq!(result.links.len(), 2);
+        assert!(result.links.contains(&"/about".to_string()));
+
+        mock.assert_async().await;
+    }
 }
