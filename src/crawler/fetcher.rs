@@ -1,0 +1,41 @@
+use scraper::{Html, Selector};
+
+#[derive(serde::Serialize)]
+pub struct FetchResult {
+    pub url: String,
+    pub title: String,
+    pub text: String,
+    pub links: Vec<String>,
+}
+
+pub async fn fetch(client: &reqwest::Client, url: &url::Url) -> anyhow::Result<FetchResult> {
+    let html = client.get(url.as_str()).send().await?.text().await?;
+    let document = Html::parse_document(&html);
+    let title_sel = Selector::parse("title").unwrap();
+    let title = document
+    .select(&title_sel)
+    .next()                          // first <title> element
+    .map(|el| el.text().collect())   // get its text
+    .unwrap_or_default();            // fall back to empty string
+
+    let link_sel = Selector::parse("a[href]").unwrap();
+    let links: Vec<String> = document
+    .select(&link_sel) 
+    .filter_map(|el| el.attr("href")) // only elements that have href
+    .map(|href| href.to_string())
+    .collect();
+
+    let body_sel = Selector::parse("body").unwrap();
+    let text = document
+    .select(&body_sel)
+    .next()
+    .map(|el| el.text().collect())
+    .unwrap_or_default();
+
+    Ok(FetchResult {
+        url: url.to_string(), 
+        title, 
+        text,
+        links
+    })
+}
