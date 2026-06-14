@@ -20,9 +20,10 @@ pub async fn fetch(client: &reqwest::Client, url: &url::Url) -> anyhow::Result<F
 
     let link_sel = Selector::parse("a[href]").unwrap();
     let links: Vec<String> = document
-    .select(&link_sel) 
-    .filter_map(|el| el.attr("href")) // only elements that have href
-    .map(|href| href.to_string())
+    .select(&link_sel)
+    .filter_map(|el| el.attr("href"))
+    .filter_map(|href| url.join(href).ok())  // resolve relative URLs against base
+    .map(|u| u.to_string())
     .collect();
 
     let body_sel = Selector::parse("body").unwrap();
@@ -71,7 +72,7 @@ mod tests {
         assert_eq!(result.title, "Test Page");
         assert!(result.text.contains("Hello world"));
         assert_eq!(result.links.len(), 2);
-        assert!(result.links.contains(&"/about".to_string()));
+        assert!(result.links.iter().any(|l| l.ends_with("/about")));
 
         mock.assert_async().await;
     }

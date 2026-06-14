@@ -8,7 +8,9 @@ use std::io::Write;
 use std::path::Path;
 
 pub async fn crawl(seed: String, limit: usize, output: &Path) -> anyhow::Result<()> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (compatible; nsearch/0.1)")
+        .build()?;
     let mut frontier = Frontier::new();
     let mut file = std::fs::File::create(output)?;
 
