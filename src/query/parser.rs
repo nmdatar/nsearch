@@ -1,3 +1,5 @@
+use crate::analysis::tokenizer;
+
 pub fn parse(query: &str) -> Vec<String> {
-    todo!()
+    tokenizer::analyze(query)    
 }
