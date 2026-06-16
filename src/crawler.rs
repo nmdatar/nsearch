@@ -23,8 +23,19 @@ pub async fn crawl(seed: String, limit: usize, output: &Path) -> anyhow::Result<
             break;
         }
         
-        let parsed_url = url::Url::parse(&url)?;
-        let result = fetch(&client, &parsed_url).await?;
+        let parsed_url = match url::Url::parse(&url) {
+            Ok(u) => u,
+            Err(_) => continue,
+        };
+
+        let result = match fetch(&client, &parsed_url).await {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("skipping {}: {}", url, e);
+                count += 1;
+                continue;
+            }
+        };
 
         write_result(&mut file, &result)?;
 
