@@ -1,4 +1,13 @@
-use scraper::{Html, Selector};
+use scraper::{ElementRef, Html, Selector};
+
+fn clean_text(el: ElementRef) -> String {
+    el.text()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 
 #[derive(serde::Serialize)]
 pub struct FetchResult {
@@ -13,10 +22,10 @@ pub async fn fetch(client: &reqwest::Client, url: &url::Url) -> anyhow::Result<F
     let document = Html::parse_document(&html);
     let title_sel = Selector::parse("title").unwrap();
     let title = document
-    .select(&title_sel)
-    .next()                          // first <title> element
-    .map(|el| el.text().collect())   // get its text
-    .unwrap_or_default();            // fall back to empty string
+        .select(&title_sel)
+        .next()
+        .map(clean_text)
+        .unwrap_or_default();
 
     let link_sel = Selector::parse("a[href]").unwrap();
     let links: Vec<String> = document
