@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 use crate::index::postings::DocId;
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 #[derive(serde::Serialize, Deserialize)]
 pub struct DocMeta {
@@ -11,6 +11,12 @@ pub struct DocMeta {
 #[derive(serde::Serialize, Deserialize)]
 pub struct DocStore {
     pub inner: HashMap<DocId, DocMeta>,
+}
+
+impl Default for DocStore {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DocStore {

@@ -14,6 +14,12 @@ pub struct Index {
     pub num_docs: u32,
 }
 
+impl Default for Index {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Index {
     pub fn new() -> Self {
         Self {
