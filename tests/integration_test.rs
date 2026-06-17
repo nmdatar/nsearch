@@ -1,12 +1,15 @@
 use nsearch::{
     index::builder,
-    query::{parser, retrieval, scorer::{self, Bm25}},
+    query::{
+        parser, retrieval,
+        scorer::{self, Bm25},
+    },
 };
 
 #[test]
 fn test_index_and_query_pipeline() {
     let dir = std::env::temp_dir();
-    let pages   = dir.join("integration_pages.jsonl");
+    let pages = dir.join("integration_pages.jsonl");
     let index_p = dir.join("integration_index.json");
     let store_p = dir.join("integration_store.json");
 
@@ -33,11 +36,16 @@ fn test_index_and_query_pipeline() {
 
     // rust pages should rank above python page
     let top_url = &store.inner[&results[0].0].url;
-    assert!(top_url.contains("a.com") || top_url.contains("c.com"),
-        "expected a rust page to rank first, got {}", top_url);
+    assert!(
+        top_url.contains("a.com") || top_url.contains("c.com"),
+        "expected a rust page to rank first, got {}",
+        top_url
+    );
 
     // python page should not be in top 2
-    let top2_urls: Vec<&str> = results.iter().take(2)
+    let top2_urls: Vec<&str> = results
+        .iter()
+        .take(2)
         .map(|(id, _)| store.inner[id].url.as_str())
         .collect();
     assert!(!top2_urls.contains(&"https://b.com"));

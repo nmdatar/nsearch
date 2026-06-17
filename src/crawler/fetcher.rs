@@ -29,24 +29,24 @@ pub async fn fetch(client: &reqwest::Client, url: &url::Url) -> anyhow::Result<F
 
     let link_sel = Selector::parse("a[href]").unwrap();
     let links: Vec<String> = document
-    .select(&link_sel)
-    .filter_map(|el| el.attr("href"))
-    .filter_map(|href| url.join(href).ok())  // resolve relative URLs against base
-    .map(|u| u.to_string())
-    .collect();
+        .select(&link_sel)
+        .filter_map(|el| el.attr("href"))
+        .filter_map(|href| url.join(href).ok()) // resolve relative URLs against base
+        .map(|u| u.to_string())
+        .collect();
 
     let body_sel = Selector::parse("body").unwrap();
     let text = document
-    .select(&body_sel)
-    .next()
-    .map(|el| el.text().collect())
-    .unwrap_or_default();
+        .select(&body_sel)
+        .next()
+        .map(|el| el.text().collect())
+        .unwrap_or_default();
 
     Ok(FetchResult {
         url: url.to_string(),
         title,
         text,
-        links
+        links,
     })
 }
 
@@ -58,10 +58,12 @@ mod tests {
     async fn test_fetch_extracts_title_and_links() {
         let mut server = mockito::Server::new_async().await;
 
-        let mock = server.mock("GET", "/")
+        let mock = server
+            .mock("GET", "/")
             .with_status(200)
             .with_header("content-type", "text/html")
-            .with_body(r#"
+            .with_body(
+                r#"
                 <html>
                     <head><title>Test Page</title></head>
                     <body>
@@ -70,7 +72,8 @@ mod tests {
                         <a href="/contact">Contact</a>
                     </body>
                 </html>
-            "#)
+            "#,
+            )
             .create_async()
             .await;
 

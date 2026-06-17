@@ -1,9 +1,9 @@
 pub mod fetcher;
 pub mod frontier;
 
-use frontier::Frontier;
 use fetcher::{FetchResult, fetch};
-use tokio::sync::{Semaphore};
+use frontier::Frontier;
+use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use std::io::Write;
@@ -13,12 +13,14 @@ use std::sync::{Arc, Mutex};
 const PERMITS: usize = 10;
 
 pub async fn crawl(seed: String, limit: usize, output: &Path) -> anyhow::Result<()> {
-    let client = Arc::new(reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (compatible; nsearch/0.1)")
-        .build()?);
+    let client = Arc::new(
+        reqwest::Client::builder()
+            .user_agent("Mozilla/5.0 (compatible; nsearch/0.1)")
+            .build()?,
+    );
     let mut frontier = Frontier::new();
     let file = Arc::new(Mutex::new(std::fs::File::create(output)?));
-    let semaphore = Arc::new(Semaphore::new(PERMITS)); 
+    let semaphore = Arc::new(Semaphore::new(PERMITS));
     frontier.push(seed);
     let mut count = 0;
     let mut tasks: JoinSet<anyhow::Result<Vec<String>>> = JoinSet::new();
@@ -26,7 +28,9 @@ pub async fn crawl(seed: String, limit: usize, output: &Path) -> anyhow::Result<
     loop {
         while count < limit {
             let url = frontier.pop();
-            let Some(url) = url else {break;};
+            let Some(url) = url else {
+                break;
+            };
             let client = client.clone();
             let file = file.clone();
             let permit = semaphore.clone().acquire_owned().await?;
@@ -35,15 +39,15 @@ pub async fn crawl(seed: String, limit: usize, output: &Path) -> anyhow::Result<
             tasks.spawn(async move {
                 let _permit = permit;
                 let parsed_url = match url::Url::parse(&url) {
-                  Ok(u) => u,
-                  Err(_) => return Ok(vec![]),  
+                    Ok(u) => u,
+                    Err(_) => return Ok(vec![]),
                 };
 
                 let result = match fetch(&client, &parsed_url).await {
                     Ok(r) => r,
-                    Err(e) => { 
+                    Err(e) => {
                         eprintln!("skipping {}: {}", url, e);
-                        return Ok(vec![]); 
+                        return Ok(vec![]);
                     }
                 };
 
@@ -56,14 +60,16 @@ pub async fn crawl(seed: String, limit: usize, output: &Path) -> anyhow::Result<
             });
         }
 
-        if tasks.is_empty() {break;}
+        if tasks.is_empty() {
+            break;
+        }
 
         match tasks.join_next().await.unwrap() {
             Ok(Ok(links)) => {
                 for link in links {
                     frontier.push(link);
                 }
-            },
+            }
             Ok(Err(e)) => eprint!("fetch error: {}", e),
             Err(e) => eprintln!("task panic: {}", e),
         }
@@ -116,11 +122,13 @@ mod tests {
             ))
             .create_async().await;
 
-        let _m2 = server.mock("GET", "/page2")
+        let _m2 = server
+            .mock("GET", "/page2")
             .with_status(200)
             .with_header("content-type", "text/html")
             .with_body(r#"<html><head><title>Page 2</title></head><body></body></html>"#)
-            .create_async().await;
+            .create_async()
+            .await;
 
         let path = std::env::temp_dir().join("test_crawl_limit.jsonl");
         crawl(server.url(), 1, &path).await.unwrap();
@@ -143,11 +151,13 @@ mod tests {
             ))
             .create_async().await;
 
-        let _m2 = server.mock("GET", "/page2")
+        let _m2 = server
+            .mock("GET", "/page2")
             .with_status(200)
             .with_header("content-type", "text/html")
             .with_body(r#"<html><head><title>Page 2</title></head><body></body></html>"#)
-            .create_async().await;
+            .create_async()
+            .await;
 
         let path = std::env::temp_dir().join("test_crawl_links.jsonl");
         crawl(server.url(), 2, &path).await.unwrap();
@@ -164,7 +174,8 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
 
         // page 1 links to page 2 twice — should only crawl page 2 once
-        let _m1 = server.mock("GET", "/")
+        let _m1 = server
+            .mock("GET", "/")
             .with_status(200)
             .with_header("content-type", "text/html")
             .with_body(format!(
@@ -174,14 +185,17 @@ mod tests {
                 </body></html>"#,
                 server.url()
             ))
-            .create_async().await;
+            .create_async()
+            .await;
 
-        let _m2 = server.mock("GET", "/page2")
+        let _m2 = server
+            .mock("GET", "/page2")
             .with_status(200)
             .with_header("content-type", "text/html")
             .with_body(r#"<html><head><title>Page 2</title></head><body></body></html>"#)
-            .expect(1)  // must be called exactly once
-            .create_async().await;
+            .expect(1) // must be called exactly once
+            .create_async()
+            .await;
 
         let path = std::env::temp_dir().join("test_crawl_dedup.jsonl");
         crawl(server.url(), 10, &path).await.unwrap();

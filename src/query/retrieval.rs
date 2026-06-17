@@ -22,7 +22,9 @@ mod tests {
         for (term, docs) in postings {
             index.postings.insert(
                 term.to_string(),
-                docs.into_iter().map(|(doc_id, term_freq)| Posting { doc_id, term_freq }).collect(),
+                docs.into_iter()
+                    .map(|(doc_id, term_freq)| Posting { doc_id, term_freq })
+                    .collect(),
             );
         }
         index
@@ -31,7 +33,7 @@ mod tests {
     #[test]
     fn test_retrieve_returns_union_of_matching_docs() {
         let index = make_index(vec![
-            ("rust",  vec![(0, 2), (2, 1)]),
+            ("rust", vec![(0, 2), (2, 1)]),
             ("async", vec![(0, 1), (3, 1)]),
         ]);
 

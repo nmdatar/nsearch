@@ -1,5 +1,9 @@
 use clap::{Parser, Subcommand};
-use nsearch::{crawler, index::{builder}, query::{parser, retrieval, scorer}};
+use nsearch::{
+    crawler,
+    index::builder,
+    query::{parser, retrieval, scorer},
+};
 use std::path::Path;
 
 #[derive(Parser)]
@@ -18,7 +22,7 @@ enum Command {
         limit: usize,
         #[arg(long, default_value = "data/pages.jsonl")]
         output: String,
-    },    
+    },
     Index {
         #[arg(long, default_value = "data/pages.jsonl")]
         pages_path: String,
@@ -43,22 +47,41 @@ enum Command {
 }
 
 #[derive(clap::ValueEnum, Clone)]
-  enum ScorerArg {
-      Bm25,
-      Tfidf,
-  }
+enum ScorerArg {
+    Bm25,
+    Tfidf,
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     match args.command {
-        Command::Crawl { seed, limit, output} => {
+        Command::Crawl {
+            seed,
+            limit,
+            output,
+        } => {
             crawler::crawl(seed, limit, Path::new(&output)).await?;
         }
-        Command::Index { pages_path, index_output, store_output } => {
-            builder::build(Path::new(&pages_path), Path::new(&index_output), Path::new(&store_output))?;
+        Command::Index {
+            pages_path,
+            index_output,
+            store_output,
+        } => {
+            builder::build(
+                Path::new(&pages_path),
+                Path::new(&index_output),
+                Path::new(&store_output),
+            )?;
         }
-        Command::Query { terms, index_path, store_path, scorer, k1, b } => {
+        Command::Query {
+            terms,
+            index_path,
+            store_path,
+            scorer,
+            k1,
+            b,
+        } => {
             let parsed_terms = parser::parse(&terms);
             let index = &std::fs::read_to_string(&index_path)?;
             let store = &std::fs::read_to_string(&store_path)?;
@@ -67,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
             let relevant_docs = retrieval::retrieve(&parsed_terms, &index);
             let scorer: Box<dyn scorer::Scorer> = match scorer {
                 ScorerArg::Tfidf => Box::new(scorer::TfIdf),
-                ScorerArg::Bm25 => Box::new(scorer::Bm25 { k1, b })
+                ScorerArg::Bm25 => Box::new(scorer::Bm25 { k1, b }),
             };
             let results = scorer::rank(relevant_docs, &parsed_terms, &index, &*scorer);
 
@@ -78,6 +101,6 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     }
-    
+
     Ok(())
 }
