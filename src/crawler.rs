@@ -3,47 +3,70 @@ pub mod frontier;
 
 use frontier::Frontier;
 use fetcher::{FetchResult, fetch};
+use tokio::sync::{Semaphore};
+use tokio::task::JoinSet;
 
 use std::io::Write;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
+
+const PERMITS: usize = 10;
 
 pub async fn crawl(seed: String, limit: usize, output: &Path) -> anyhow::Result<()> {
-    let client = reqwest::Client::builder()
+    let client = Arc::new(reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (compatible; nsearch/0.1)")
-        .build()?;
+        .build()?);
     let mut frontier = Frontier::new();
-    let mut file = std::fs::File::create(output)?;
-
+    let file = Arc::new(Mutex::new(std::fs::File::create(output)?));
+    let semaphore = Arc::new(Semaphore::new(PERMITS)); 
     frontier.push(seed);
-    
     let mut count = 0;
+    let mut tasks: JoinSet<anyhow::Result<Vec<String>>> = JoinSet::new();
 
-    while let Some(url) = frontier.pop() {
-        if count >= limit {
-            break;
+    loop {
+        while count < limit {
+            let url = frontier.pop();
+            let Some(url) = url else {break;};
+            let client = client.clone();
+            let file = file.clone();
+            let permit = semaphore.clone().acquire_owned().await?;
+            count += 1;
+
+            tasks.spawn(async move {
+                let _permit = permit;
+                let parsed_url = match url::Url::parse(&url) {
+                  Ok(u) => u,
+                  Err(_) => return Ok(vec![]),  
+                };
+
+                let result = match fetch(&client, &parsed_url).await {
+                    Ok(r) => r,
+                    Err(e) => { 
+                        eprintln!("skipping {}: {}", url, e);
+                        return Ok(vec![]); 
+                    }
+                };
+
+                {
+                    let mut f = file.lock().unwrap();
+                    write_result(&mut f, &result)?;
+                }
+
+                Ok(result.links)
+            });
         }
-        
-        let parsed_url = match url::Url::parse(&url) {
-            Ok(u) => u,
-            Err(_) => continue,
-        };
 
-        let result = match fetch(&client, &parsed_url).await {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("skipping {}: {}", url, e);
-                count += 1;
-                continue;
-            }
-        };
+        if tasks.is_empty() {break;}
 
-        write_result(&mut file, &result)?;
-
-        for child_link in result.links {
-            frontier.push(child_link);
+        match tasks.join_next().await.unwrap() {
+            Ok(Ok(links)) => {
+                for link in links {
+                    frontier.push(link);
+                }
+            },
+            Ok(Err(e)) => eprint!("fetch error: {}", e),
+            Err(e) => eprintln!("task panic: {}", e),
         }
-
-        count +=1;
     }
 
     Ok(())
@@ -77,7 +100,6 @@ mod tests {
         assert!(contents.contains("example.com"));
         assert!(contents.contains("Example"));
         assert!(contents.ends_with('\n'));
-
         std::fs::remove_file(&path).unwrap();
     }
 
@@ -85,67 +107,88 @@ mod tests {
     async fn test_crawl_stops_at_limit() {
         let mut server = mockito::Server::new_async().await;
 
-        let _mock1 = server.mock("GET", "/")
+        let _m1 = server.mock("GET", "/")
             .with_status(200)
             .with_header("content-type", "text/html")
-            .with_body(format!(r#"
-                <html>
-                    <head><title>Page 1</title></head>
-                    <body><a href="{}/page2">Page 2</a></body>
-                </html>
-            "#, server.url()))
-            .create_async()
-            .await;
+            .with_body(format!(
+                r#"<html><head><title>Page 1</title></head><body><a href="{}/page2">Page 2</a></body></html>"#,
+                server.url()
+            ))
+            .create_async().await;
 
-        let _mock2 = server.mock("GET", "/page2")
+        let _m2 = server.mock("GET", "/page2")
             .with_status(200)
             .with_header("content-type", "text/html")
-            .with_body(r#"<html><head><title>Page 2</title></head><body>No links</body></html>"#)
-            .create_async()
-            .await;
+            .with_body(r#"<html><head><title>Page 2</title></head><body></body></html>"#)
+            .create_async().await;
 
         let path = std::env::temp_dir().join("test_crawl_limit.jsonl");
-
         crawl(server.url(), 1, &path).await.unwrap();
 
         let contents = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(contents.lines().count(), 1, "should only crawl 1 page");
-
+        assert_eq!(contents.lines().count(), 1);
         std::fs::remove_file(&path).unwrap();
     }
 
     #[tokio::test]
-    async fn test_crawl_follows_child_links() {
+    async fn test_crawl_follows_links() {
         let mut server = mockito::Server::new_async().await;
 
-        let _mock1 = server.mock("GET", "/")
+        let _m1 = server.mock("GET", "/")
             .with_status(200)
             .with_header("content-type", "text/html")
-            .with_body(format!(r#"
-                <html>
-                    <head><title>Page 1</title></head>
-                    <body><a href="{}/page2">Page 2</a></body>
-                </html>
-            "#, server.url()))
-            .create_async()
-            .await;
+            .with_body(format!(
+                r#"<html><head><title>Page 1</title></head><body><a href="{}/page2">Page 2</a></body></html>"#,
+                server.url()
+            ))
+            .create_async().await;
 
-        let _mock2 = server.mock("GET", "/page2")
+        let _m2 = server.mock("GET", "/page2")
             .with_status(200)
             .with_header("content-type", "text/html")
-            .with_body(r#"<html><head><title>Page 2</title></head><body>No links</body></html>"#)
-            .create_async()
-            .await;
+            .with_body(r#"<html><head><title>Page 2</title></head><body></body></html>"#)
+            .create_async().await;
 
         let path = std::env::temp_dir().join("test_crawl_links.jsonl");
-
         crawl(server.url(), 2, &path).await.unwrap();
 
         let contents = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(contents.lines().count(), 2, "should have crawled both pages");
+        assert_eq!(contents.lines().count(), 2);
         assert!(contents.contains("Page 1"));
         assert!(contents.contains("Page 2"));
+        std::fs::remove_file(&path).unwrap();
+    }
 
+    #[tokio::test]
+    async fn test_crawl_deduplicates_urls() {
+        let mut server = mockito::Server::new_async().await;
+
+        // page 1 links to page 2 twice — should only crawl page 2 once
+        let _m1 = server.mock("GET", "/")
+            .with_status(200)
+            .with_header("content-type", "text/html")
+            .with_body(format!(
+                r#"<html><head><title>Page 1</title></head><body>
+                    <a href="{0}/page2">Link A</a>
+                    <a href="{0}/page2">Link B</a>
+                </body></html>"#,
+                server.url()
+            ))
+            .create_async().await;
+
+        let _m2 = server.mock("GET", "/page2")
+            .with_status(200)
+            .with_header("content-type", "text/html")
+            .with_body(r#"<html><head><title>Page 2</title></head><body></body></html>"#)
+            .expect(1)  // must be called exactly once
+            .create_async().await;
+
+        let path = std::env::temp_dir().join("test_crawl_dedup.jsonl");
+        crawl(server.url(), 10, &path).await.unwrap();
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(contents.lines().count(), 2);
+        _m2.assert_async().await;
         std::fs::remove_file(&path).unwrap();
     }
 }
